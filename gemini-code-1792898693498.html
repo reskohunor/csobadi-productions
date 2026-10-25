@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Csobadi Productions</title>
+  
+  <!-- PWA / Mobile Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Csobadi" />
+  <meta name="theme-color" content="#030712" />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, onSnapshot, setDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaD7oeSb7Te_vyQaJco29J7NLwNHfrkqU",
+      authDomain: "csobadi-productions.firebaseapp.com",
+      projectId: "csobadi-productions",
+      storageBucket: "csobadi-productions.firebasestorage.app",
+      messagingSenderId: "13238368784",
+      appId: "1:13238368784:web:9cb6c6c44652a6a1dba895"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.FB = { db, collection, onSnapshot, setDoc, doc, deleteDoc };
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+
+  <style>
+    body {
+      background-color: #030712;
+      color: #f8fafc;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    ::selection {
+      background-color: #eab308;
+      color: #030712;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-gray-950 text-slate-100 min-h-screen pb-24 md:pb-8">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    const Clapperboard = (props) => <i data-lucide="clapperboard" className={props.className}></i>;
+    const LogOut = (props) => <i data-lucide="log-out" className={props.className}></i>;
+    const Plus = (props) => <i data-lucide="plus" className={props.className}></i>;
+    const Users = (props) => <i data-lucide="users" className={props.className}></i>;
+    const Calendar = (props) => <i data-lucide="calendar" className={props.className}></i>;
+    const Camera = (props) => <i data-lucide="camera" className={props.className}></i>;
+    const Search = (props) => <i data-lucide="search" className={props.className}></i>;
+    const Edit2 = (props) => <i data-lucide="edit-2" className={props.className}></i>;
+    const Trash2 = (props) => <i data-lucide="trash-2" className={props.className}></i>;
+    const Lock = (props) => <i data-lucide="lock" className={props.className}></i>;
+    const KeyRound = (props) => <i data-lucide="key-round" className={props.className}></i>;
+    const Check = (props) => <i data-lucide="check" className={props.className}></i>;
+
+    const BTS_ROLES = [
+      "Director",
+      "Co-Director",
+      "Media Director & Manager",
+      "Cameraman",
+      "Helper",
+      "Management"
+    ];
+
+    const DEFAULT_ADMINS = [
+      { id: 'adm_hunor', name: 'Hunor', role: 'Rendező / Admin', pass: 'hunor2026' },
+      { id: 'adm_alex', name: 'Alex', role: 'Rendező / Admin', pass: 'alex2026' },
+      { id: 'adm_bence', name: 'Bence', role: 'Rendező / Admin', pass: 'bence2026' }
+    ];
+
+    const DEFAULT_GEAR = [
+      { id: 'g1', name: 'Sony α6700', category: 'Kamera', notes: 'Fő kamera (4K)' },
+      { id: 'g2', name: 'Sigma 10-18mm f/2.8', category: 'Objektív', notes: 'Nagylátószög' },
+      { id: 'g3', name: 'DJI Osmo Pocket 3', category: 'Kamera', notes: 'B-cam / BTS' },
+      { id: 'g4', name: 'DJI RS 4 Mini', category: 'Stabilizátor / Rig', notes: 'Gimbal' },
+      { id: 'g5', name: 'DJI Mic Mini', category: 'Hang', notes: 'Vezeték nélküli mikrofon' }
+    ];
+
+    function App() {
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [loginRole, setLoginRole] = useState('adm_hunor');
+      const [inputPassword, setInputPassword] = useState('');
+      const [loginError, setLoginError] = useState('');
+
+      const [admins, setAdmins] = useState(DEFAULT_ADMINS);
+      const [crew, setCrew] = useState([]);
+      const [gear, setGear] = useState(DEFAULT_GEAR);
+      const [shootingDays, setShootingDays] = useState([]);
+      
+      const [activeTab, setActiveTab] = useState('days');
+      const [crewFilter, setCrewFilter] = useState('ALL');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [isOnline, setIsOnline] = useState(false);
+      
+      const [isDayModalOpen, setIsDayModalOpen] = useState(false);
+      const [editingDay, setEditingDay] = useState(null);
+
+      const [isCrewModalOpen, setIsCrewModalOpen] = useState(false);
+      const [editingCrew, setEditingCrew] = useState(null);
+
+      const [isGearModalOpen, setIsGearModalOpen] = useState(false);
+      const [editingGear, setEditingGear] = useState(null);
+
+      const [isPassChangeOpen, setIsPassChangeOpen] = useState(false);
+      const [newPassInput, setNewPassInput] = useState('');
+
+      // Firebase Sync
+      useEffect(() => {
+        let unsubAdmins, unsubCrew, unsubGear, unsubDays;
+
+        const setupListeners = () => {
+          if (!window.FB) return;
+          const { db, collection, onSnapshot, setDoc, doc } = window.FB;
+
+          unsubAdmins = onSnapshot(collection(db, "admins"), (snapshot) => {
+            setIsOnline(true);
+            if (!snapshot.empty) {
+              const list = [];
+              snapshot.forEach(d => list.push(d.data()));
+              setAdmins(list);
+            } else {
+              DEFAULT_ADMINS.forEach(adm => setDoc(doc(db, "admins", adm.id), adm));
+            }
+          }, () => setIsOnline(false));
+
+          unsubCrew = onSnapshot(collection(db, "crew_members"), (snapshot) => {
+            setIsOnline(true);
+            const list = [];
+            snapshot.forEach(d => list.push(d.data()));
+            setCrew(list);
+          }, () => setIsOnline(false));
+
+          unsubGear = onSnapshot(collection(db, "gear_items"), (snapshot) => {
+            setIsOnline(true);
+            if (!snapshot.empty) {
+              const list = [];
+              snapshot.forEach(d => list.push(d.data()));
+              setGear(list);
+            } else {
+              DEFAULT_GEAR.forEach(g => setDoc(doc(db, "gear_items", g.id), g));
+            }
+          }, () => setIsOnline(false));
+
+          unsubDays = onSnapshot(collection(db, "shooting_days"), (snapshot) => {
+            setIsOnline(true);
+            const list = [];
+            snapshot.forEach(d => list.push(d.data()));
+            setShootingDays(list);
+          }, () => setIsOnline(false));
+        };
+
+        const handleReady = () => setupListeners();
+        window.addEventListener('firebase-ready', handleReady);
+        if (window.FB) setupListeners();
+
+        return () => {
+          window.removeEventListener('firebase-ready', handleReady);
+          if (unsubAdmins) unsubAdmins();
+          if (unsubCrew) unsubCrew();
+          if (unsubGear) unsubGear();
+          if (unsubDays) unsubDays();
+        };
+      }, []);
+
+      useEffect(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+
+      // Non-admin cannot view gear tab
+      useEffect(() => {
+        if (!currentUser?.isAdmin && activeTab === 'gear') {
+          setActiveTab('days');
+        }
+      }, [currentUser, activeTab]);
+
+      const handleLoginSubmit = (e) => {
+        e.preventDefault();
+        setLoginError('');
+
+        const foundAdmin = admins.find(a => a.id === loginRole);
+        if (foundAdmin) {
+          if (inputPassword === foundAdmin.pass) {
+            setIsLoggedIn(true);
+            setCurrentUser({ ...foundAdmin, isAdmin: true });
+            setActiveTab('days');
+            setInputPassword('');
+          } else {
+            setLoginError('Helytelen adminisztrátori jelszó!');
+          }
+          return;
+        }
+
+        const foundMember = crew.find(c => c.id === loginRole);
+        if (foundMember) {
+          const expectedPass = foundMember.pass || '1234';
+          if (inputPassword === expectedPass) {
+            setIsLoggedIn(true);
+            setCurrentUser({ ...foundMember, isAdmin: false });
+            setActiveTab('days');
+            setInputPassword('');
+          } else {
+            setLoginError('Helytelen jelszó a kiválasztott stáb/szereplő fiókhoz!');
+          }
+        }
+      };
+
+      const handleLogout = () => {
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setInputPassword('');
+        setLoginError('');
+      };
+
+      const handleChangeOwnPassword = async (e) => {
+        e.preventDefault();
+        if (newPassInput.trim().length < 4) {
+          alert('A jelszónak legalább 4 karakterből kell állnia!');
+          return;
+        }
+
+        if (currentUser.isAdmin) {
+          const target = admins.find(a => a.id === currentUser.id);
+          const updated = { ...target, pass: newPassInput };
+          if (window.FB) {
+            await window.FB.setDoc(window.FB.doc(window.FB.db, "admins", currentUser.id), updated);
+          }
+        } else {
+          const target = crew.find(c => c.id === currentUser.id);
+          const
