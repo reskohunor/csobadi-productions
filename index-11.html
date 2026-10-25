@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Csobadi Productions</title>
+  
+  <!-- PWA / Mobile Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Csobadi" />
+  <meta name="theme-color" content="#000000" />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, onSnapshot, setDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaD7oeSb7Te_vyQaJco29J7NLwNHfrkqU",
+      authDomain: "csobadi-productions.firebaseapp.com",
+      projectId: "csobadi-productions",
+      storageBucket: "csobadi-productions.firebasestorage.app",
+      messagingSenderId: "13238368784",
+      appId: "1:13238368784:web:9cb6c6c44652a6a1dba895"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.FB = { db, collection, onSnapshot, setDoc, doc, deleteDoc };
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+
+  <style>
+    body {
+      background-color: #030712;
+      color: #f8fafc;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    ::selection {
+      background-color: #dc2626;
+      color: #ffffff;
+    }
+    /* Smooth scroll for mobile modals */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-slate-100 min-h-screen pb-20 md:pb-8">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // Lucide Icon wrappers
+    const Clapperboard = (props) => <i data-lucide="clapperboard" className={props.className}></i>;
+    const LogOut = (props) => <i data-lucide="log-out" className={props.className}></i>;
+    const Plus = (props) => <i data-lucide="plus" className={props.className}></i>;
+    const Users = (props) => <i data-lucide="users" className={props.className}></i>;
+    const Calendar = (props) => <i data-lucide="calendar" className={props.className}></i>;
+    const Search = (props) => <i data-lucide="search" className={props.className}></i>;
+    const Edit2 = (props) => <i data-lucide="edit-2" className={props.className}></i>;
+    const Trash2 = (props) => <i data-lucide="trash-2" className={props.className}></i>;
+    const Lock = (props) => <i data-lucide="lock" className={props.className}></i>;
+    const KeyRound = (props) => <i data-lucide="key-round" className={props.className}></i>;
+
+    // Clean Default Admins
+    const DEFAULT_ADMINS = [
+      { id: 'adm_hunor', name: 'Hunor', role: 'Rendező / Admin', pass: 'hunor2026' },
+      { id: 'adm_alex', name: 'Alex', role: 'Rendező / Admin', pass: 'alex2026' },
+      { id: 'adm_bence', name: 'Bence', role: 'Rendező / Admin', pass: 'bence2026' }
+    ];
+
+    function App() {
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [loginRole, setLoginRole] = useState('adm_hunor');
+      const [inputPassword, setInputPassword] = useState('');
+      const [loginError, setLoginError] = useState('');
+
+      const [admins, setAdmins] = useState(DEFAULT_ADMINS);
+      const [cast, setCast] = useState([]);
+      const [shootingDays, setShootingDays] = useState([]);
+      const [activeTab, setActiveTab] = useState('days');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [isOnline, setIsOnline] = useState(false);
+      
+      const [isDayModalOpen, setIsDayModalOpen] = useState(false);
+      const [editingDay, setEditingDay] = useState(null);
+
+      const [isCastModalOpen, setIsCastModalOpen] = useState(false);
+      const [editingCast, setEditingCast] = useState(null);
+
+      const [isPassChangeOpen, setIsPassChangeOpen] = useState(false);
+      const [newPassInput, setNewPassInput] = useState('');
+
+      // Firebase Realtime Listeners
+      useEffect(() => {
+        let unsubAdmins, unsubCast, unsubDays;
+
+        const setupListeners = () => {
+          if (!window.FB) return;
+          const { db, collection, onSnapshot, setDoc, doc } = window.FB;
+
+          unsubAdmins = onSnapshot(collection(db, "admins"), (snapshot) => {
+            setIsOnline(true);
+            if (!snapshot.empty) {
+              const list = [];
+              snapshot.forEach(d => list.push(d.data()));
+              setAdmins(list);
+            } else {
+              DEFAULT_ADMINS.forEach(adm => setDoc(doc(db, "admins", adm.id), adm));
+            }
+          }, (err) => {
+            setIsOnline(false);
+          });
+
+          unsubCast = onSnapshot(collection(db, "cast_members"), (snapshot) => {
+            setIsOnline(true);
+            const list = [];
+            snapshot.forEach(d => {
+              const data = d.data();
+              const lowerName = (data.name || '').toLowerCase();
+              if (!lowerName.includes('kovács anna') && !lowerName.includes('nagy bence') && !lowerName.includes('szabó dániel')) {
+                list.push(data);
+              }
+            });
+            setCast(list);
+          }, (err) => {
+            setIsOnline(false);
+          });
+
+          unsubDays = onSnapshot(collection(db, "shooting_days"), (snapshot) => {
+            setIsOnline(true);
+            const list = [];
+            snapshot.forEach(d => list.push(d.data()));
+            setShootingDays(list);
+          }, (err) => {
+            setIsOnline(false);
+          });
+        };
+
+        const handleReady = () => setupListeners();
+        window.addEventListener('firebase-ready', handleReady);
+        if (window.FB) setupListeners();
+
+        return () => {
+          window.removeEventListener('firebase-ready', handleReady);
+          if (unsubAdmins) unsubAdmins();
+          if (unsubCast) unsubCast();
+          if (unsubDays) unsubDays();
+        };
+      }, []);
+
+      useEffect(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+
+      const handleLoginSubmit = (e) => {
+        e.preventDefault();
+        setLoginError('');
+
+        const foundAdmin = admins.find(a => a.id === loginRole);
+        if (foundAdmin) {
+          if (inputPassword === foundAdmin.pass) {
+            setIsLoggedIn(true);
+            setCurrentUser({ ...foundAdmin, isAdmin: true });
+            setActiveTab('days');
+            setInputPassword('');
+          } else {
+            setLoginError('Helytelen adminisztrátori jelszó!');
+          }
+          return;
+        }
+
+        const foundActor = cast.find(c => c.id === loginRole);
+        if (foundActor) {
+          const expectedPass = foundActor.pass || '1234';
+          if (inputPassword === expectedPass) {
+            setIsLoggedIn(true);
+            setCurrentUser({ ...foundActor, isAdmin: false });
+            setActiveTab('my_schedule');
+            setInputPassword('');
+          } else {
+            setLoginError('Helytelen jelszó a kiválasztott szereplőhöz!');
+          }
+        }
+      };
+
+      const handleLogout = () => {
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setInputPassword('');
+        setLoginError('');
+      };
+
+      const handleChangeOwnPassword = async (e) => {
+        e.preventDefault();
+        if (newPassInput.trim().length < 4) {
+          alert('A jelszónak legalább 4 karakterből kell állnia!');
+          return;
+        }
+
+        if (currentUser.isAdmin) {
+          const target = admins.find(a => a.id === currentUser.id);
+          const updated = { ...target, pass: newPassInput };
+          if (window.FB) {
+            await window.FB.setDoc(window.FB.doc(window.FB.db, "admins", currentUser.id), updated);
+          }
+        } else {
+          const target = cast.find(c => c.id === currentUser.id);
+          const updated = { ...target, pass: newPassInput };
+          if (window.FB) {
+            await window.FB.setDoc(window.FB.doc(window.FB.db, "cast_members", currentUser.id), updated);
+          }
+        }
+
+        setIsPassChangeOpen(false);
+        setNewPassInput('');
+        alert('Jelszó elmentve!');
+      };
+
+      const filteredDays = useMemo(() => {
+        return shootingDays.filter(day => {
+          const titleMatch = (day.title || '').toLowerCase().includes(searchTerm.toLowerCase());
+          const locMatch = (day.locationName || '').toLowerCase().includes(searchTerm.toLowerCase());
+          const sceneMatch = (day.scenes || '').toLowerCase().includes(searchTerm.toLowerCase());
+          const matchSearch = titleMatch || locMatch || sceneMatch;
+
+          if (!currentUser?.isAdmin && activeTab === 'my_schedule') {
+            return matchSearch && (day.assignedActorIds || []).includes(currentUser.id);
+          }
+          return matchSearch;
+        });
+      }, [shootingDays, searchTerm, currentUser, activeTab]);
+
+      const handleSaveDay = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const assignedActors = formData.getAll('assignedActors');
+        const dayId = editingDay ? editingDay.id : `day_${Date.now()}`;
+
+        const dayData = {
+          id: dayId,
+          title: formData.get('title'),
+          date: formData.get('date'),
+          callTime: formData.get('callTime'),
+          wrapTime: formData.get('wrapTime'),
+          locationName: formData.get('locationName'),
+          address: formData.get('address'),
+          dressCode: formData.get('dressCode'),
+          scenes: formData.get('scenes'),
+          propsNotes: formData.get('propsNotes'),
+          assignedActorIds: assignedActors,
+          status: formData.get('status') || 'Közelgő'
+        };
+
+        if (window.FB) {
+          await window.FB.setDoc(window.FB.doc(window.FB.db, "shooting_days", dayId), dayData);
+        }
+
+        setIsDayModalOpen(false);
+        setEditingDay(null);
+      };
+
+      const handleDeleteDay = async (id) => {
+        if (window.confirm('Biztosan törölni szeretnéd ezt a forgatási napot?')) {
+          if (window.FB) {
+            await window.FB.deleteDoc(window.FB.doc(window.FB.db, "shooting_days", id));
+          }
+        }
+      };
+
+      const handleSaveCast = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const actorId = editingCast ? editingCast.id : `act_${Date.now()}`;
+
+        const actorData = {
+          id: actorId,
+          name: formData.get('name'),
+          character: formData.get('character'),
+          phone: formData.get('phone'),
+          email: formData.get('email'),
+          pass: formData.get('pass') || '1234',
+          avatar: formData.get('avatar') || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+          notes: formData.get('notes')
+        };
+
+        if (!editingCast && cast.length >= 20) {
+          alert('Maximum 20 szereplő engedélyezett!');
+          return;
+        }
+
+        if (window.FB) {
+          await window.FB.setDoc(window.FB.doc(window.FB.db, "cast_members", actorId), actorData);
+        }
+
+        setIsCastModalOpen(false);
+        setEditingCast(null);
+      };
+
+      const handleDeleteCast = async (id) => {
+        if (window.confirm('Biztosan törlöd a szereplőt?')) {
+          if (window.FB) {
+            await window.FB.deleteDoc(window.FB.doc(window.FB.db, "cast_members", id));
+          }
+        }
+      };
+
+      // --- LOGIN SCREEN ---
+      if (!isLoggedIn) {
+        return (
+          <div className="min-h-screen bg-black flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="flex flex-col items-center text-center mb-6 sm:mb-8">
+                <div className="bg-gradient-to-tr from-red-600 to-red-500 p-3.5 rounded-2xl text-white shadow-xl shadow-red-600/20 mb-3">
+                  <Clapperboard className="w-8 h-8" />
+                </div>
+                <h1 className="text-2xl font-black tracking-wide">
+                  <span className="text-red-600">CSOBADI</span> <span className="text-white">PRODUCTIONS</span>
+                </h1>
+                <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold">
+                  <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                  <span className={isOnline ? 'text-emerald-400' : 'text-red-400'}>
+                    {isOnline ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+              </div>
+
+              <form onSubmit={handleLoginSubmit} className="space-y-4 sm:space-y-5">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5 uppercase tracking-wider">Profil</label>
+                  <select
+                    value={loginRole}
+                    onChange={(e) => { setLoginRole(e.target.value); setLoginError(''); }}
+                    className="w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-red-600 cursor-pointer appearance-none"
+                  >
+                    <optgroup label="🎬 Adminisztrátorok">
+                      {admins.map(a => (
+                        <option key={a.id} value={a.id} className="text-red-500 font-bold bg-gray-900">🎬 Admin - {a.name}</option>
+                      ))}
+                    </optgroup>
+                    {cast.length > 0 && (
+                      <optgroup label="🎭 Szereplők">
+                        {cast.map(c => (
+                          <option key={c.id} value={c.id} className="text-gray-200 bg-gray-900">🎭 {c.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1.5 uppercase tracking-wider">Jelszó</label>
+                  <input
+                    type="password"
+                    placeholder="Írd be a jelszót..."
+                    value={inputPassword}
+                    onChange={(e) => setInputPassword(e.target.value)}
+                    required
+                    className="w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-red-600"
+                  />
+                </div>
+
+                {loginError && (
+                  <div className="bg-red-600/10 border border-red-600/30 rounded-xl p-3 text-xs text-red-400 text-center font-medium">{loginError}</div>
+                )}
+
+                <button type="submit" className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-red-600/20 text-sm flex items-center justify-center gap-2 active:scale-95">
+                  <Lock className="w-4 h-4" /> Bejelentkezés
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // --- MAIN DASHBOARD ---
+      return (
+        <div className="min-h-screen bg-black text-gray-100 font-sans">
+          {/* HEADER (DESKTOP & MOBILE) */}
+          <header className="sticky top-0 z-30 bg-gray-900/90 backdrop-blur-md border-b border-gray-800">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="bg-gradient-to-tr from-red-600 to-red-500 p-2 rounded-xl text-white">
+                  <Clapperboard className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <div>
+                  <h1 className="font-bold text-base sm:text-lg leading-tight"><span className="text-red-600">CSOBADI</span> <span className="text-white">PROD</span></h1>
+                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold">
+                    <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                    <span className={isOnline ? 'text-emerald-400' : 'text-red-400'}>
+                      {isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="bg-gray-800/80 border border-gray-700 rounded-lg px-2.5 py-1 text-[11px] sm:text-xs text-gray-300 font-semibold truncate max-w-[120px] sm:max-w-none">
+                  {currentUser.isAdmin ? `🎬 ${currentUser.name}` : `🎭 ${currentUser.name}`}
+                </div>
+                <button onClick={() => setIsPassChangeOpen(true)} className="p-2 bg-gray-800 hover:bg-gray-700 text-red-500 rounded-lg border border-gray-700" title="Jelszó">
+                  <KeyRound className="w-4 h-4" />
+                </button>
+                <button onClick={handleLogout} className="p-2 sm:px-3 sm:py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg border border-gray-700 flex items-center gap-1.5 text-xs">
+                  <LogOut className="w-4 h-4 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Kijelentkezés</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">
+            {/* WELCOME BANNER & ACTION BUTTONS */}
+            <div className="rounded-2xl bg-gray-900 border border-gray-800 p-4 sm:p-6 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-white">Szia, <span className="text-red-500">{currentUser.name}</span>!</h2>
+              </div>
+
+              {currentUser.isAdmin && (
+                <div className="flex gap-2 sm:gap-3">
+                  <button onClick={() => { setEditingDay(null); setIsDayModalOpen(true); }} className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold px-3.5 py-2.5 rounded-xl transition flex items-center justify-center gap-2 text-xs sm:text-sm shadow-lg shadow-red-600/20 active:scale-95">
+                    <Plus className="w-4 h-4" /> Új Nap
+                  </button>
+                  <button onClick={() => { setEditingCast(null); setIsCastModalOpen(true); }} className="flex-1 sm:flex-none bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold px-3.5 py-2.5 rounded-xl border border-gray-700 transition flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-95">
+                    <Users className="w-4 h-4 text-red-500" /> Új Szereplő
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* SEARCH & DESKTOP TABS */}
+            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
+              {/* DESKTOP TABS (HIDDEN ON MOBILE) */}
+              <div className="hidden md:flex gap-1 bg-gray-900 p-1.5 rounded-xl border border-gray-800 w-fit">
+                {currentUser.isAdmin ? (
+                  <>
+                    <button onClick={() => setActiveTab('days')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${activeTab === 'days' ? 'bg-red-600 text-white' : 'text-gray-400'}`}>Forgatási Napok ({shootingDays.length})</button>
+                    <button onClick={() => setActiveTab('cast')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${activeTab === 'cast' ? 'bg-red-600 text-white' : 'text-gray-400'}`}>Színészek ({cast.length}/20)</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setActiveTab('my_schedule')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${activeTab === 'my_schedule' ? 'bg-red-600 text-white' : 'text-gray-400'}`}>Saját Napjaim</button>
+                    <button onClick={() => setActiveTab('days')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${activeTab === 'days' ? 'bg-red-600 text-white' : 'text-gray-400'}`}>Összes Nap</button>
+                  </>
+                )}
+              </div>
+
+              {/* SEARCH BAR */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Keresés..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 sm:py-2 bg-gray-900 border border-gray-800 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-red-600"
+                />
+              </div>
+            </div>
+
+            {/* SHOOTING DAYS CONTENT */}
+            {(activeTab === 'days' || activeTab === 'my_schedule') && (
+              <div className="space-y-4 sm:space-y-6">
+                {filteredDays.length === 0 ? (
+                  <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-8 sm:p-12 text-center text-gray-400 text-sm">
+                    Még nincsenek elmentett forgatási napok.
+                  </div>
+                ) : (
+                  filteredDays.map(day => {
+                    const assignedCast = cast.filter(c => (day.assignedActorIds || []).includes(c.id));
+                    return (
+                      <div key={day.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6 shadow-xl relative">
+                        <div className="flex justify-between items-start pb-3 sm:pb-4 border-b border-gray-800 gap-2">
+                          <div>
+                            <span className="bg-red-600/10 text-red-500 border border-red-600/20 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold">{day.date}</span>
+                            <h3 className="text-lg sm:text-xl font-bold text-white mt-1.5 sm:mt-2">{day.title}</h3>
+                          </div>
+                          {currentUser.isAdmin && (
+                            <div className="flex gap-1.5 shrink-0">
+                              <button onClick={() => { setEditingDay(day); setIsDayModalOpen(true); }} className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg active:scale-95"><Edit2 className="w-4 h-4" /></button>
+                              <button onClick={() => handleDeleteDay(day.id)} className="p-2 bg-gray-800 hover:bg-red-950/50 text-red-400 rounded-lg active:scale-95"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6 my-3 sm:my-4 text-xs sm:text-sm text-gray-300">
+                          <div className="bg-black/40 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border border-gray-800/60 sm:border-none">
+                            <strong className="text-gray-400 block text-[10px] sm:text-xs uppercase tracking-wider">Call Time:</strong>
+                            <span className="font-semibold text-white">{day.callTime} {day.wrapTime && `(Wrap: ${day.wrapTime})`}</span>
+                          </div>
+                          <div className="bg-black/40 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border border-gray-800/60 sm:border-none">
+                            <strong className="text-gray-400 block text-[10px] sm:text-xs uppercase tracking-wider">Helyszín:</strong>
+                            <span className="font-semibold text-white">{day.locationName}</span>
+                            <span className="text-xs text-gray-400 block mt-0.5">{day.address}</span>
+                          </div>
+                          <div className="bg-black/40 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border border-gray-800/60 sm:border-none">
+                            <strong className="text-gray-400 block text-[10px] sm:text-xs uppercase tracking-wider">Dress Code:</strong>
+                            <span className="text-gray-200">{day.dressCode || 'Nincs külön megadva'}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-800">
+                          <span className="text-[11px] sm:text-xs text-gray-400 block mb-2 font-medium">Beosztott Szereplők:</span>
+                          <div className="flex flex-wrap gap-2">
+                            {assignedCast.length > 0 ? (
+                              assignedCast.map(actor => (
+                                <span key={actor.id} className="text-xs bg-black border border-gray-800 px-2.5 py-1 rounded-lg text-gray-300 flex items-center gap-2">
+                                  <img src={actor.avatar} className="w-4 h-4 rounded-full object-cover" />
+                                  <span>{actor.name} <span className="text-red-500">({actor.character})</span></span>
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-gray-500 italic">Nincs senki beosztva.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* CAST CONTENT */}
+            {activeTab === 'cast' && (
+              <div>
+                {cast.length === 0 ? (
+                  <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-8 sm:p-12 text-center text-gray-400 text-sm">
+                    Még nincsenek felvéve szereplők.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
+                    {cast.map(actor => (
+                      <div key={actor.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-3 sm:mb-4">
+                            <div className="flex items-center gap-3">
+                              <img src={actor.avatar} alt={actor.name} className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border border-gray-700" />
+                              <div>
+                                <h4 className="font-bold text-white text-sm sm:text-base">{actor.name}</h4>
+                                <span className="text-xs text-red-500 font-medium">{actor.character}</span>
+                              </div>
+                            </div>
+                            {currentUser.isAdmin && (
+                              <div className="flex gap-1">
+                                <button onClick={() => { setEditingCast(actor); setIsCastModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-white"><Edit2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => handleDeleteCast(actor.id)} className="p-1.5 text-gray-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 space-y-1.5 bg-black/50 p-3 rounded-xl border border-gray-800">
+                            <div>Tel: <span className="text-gray-200">{actor.phone || 'Nincs'}</span></div>
+                            <div>Email: <span className="text-gray-200">{actor.email || 'Nincs'}</span></div>
+                            {currentUser.isAdmin && <div className="text-red-400 font-mono pt-1 border-t border-gray-800/80">Jelszó: {actor.pass}</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
+
+          {/* MOBILE BOTTOM NAVIGATION BAR */}
+          <nav className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-lg border-t border-gray-800 md:hidden px-4 py-2 flex justify-around items-center">
+            {currentUser.isAdmin ? (
+              <>
+                <button
+                  onClick={() => setActiveTab('days')}
+                  className={`flex flex-col items-center gap-1 text-[11px] font-semibold py-1 px-4 rounded-xl transition ${activeTab === 'days' ? 'text-red-500' : 'text-gray-400'}`}
+                >
+                  <Calendar className="w-5 h-5" />
+                  <span>Napok ({shootingDays.length})</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('cast')}
+                  className={`flex flex-col items-center gap-1 text-[11px] font-semibold py-1 px-4 rounded-xl transition ${activeTab === 'cast' ? 'text-red-500' : 'text-gray-400'}`}
+                >
+                  <Users className="w-5 h-5" />
+                  <span>Színészek ({cast.length})</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setActiveTab('my_schedule')}
+                  className={`flex flex-col items-center gap-1 text-[11px] font-semibold py-1 px-4 rounded-xl transition ${activeTab === 'my_schedule' ? 'text-red-500' : 'text-gray-400'}`}
+                >
+                  <Calendar className="w-5 h-5" />
+                  <span>Saját Napjaim</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('days')}
+                  className={`flex flex-col items-center gap-1 text-[11px] font-semibold py-1 px-4 rounded-xl transition ${activeTab === 'days' ? 'text-red-500' : 'text-gray-400'}`}
+                >
+                  <Clapperboard className="w-5 h-5" />
+                  <span>Összes Nap</span>
+                </button>
+              </>
+            )}
+          </nav>
+
+          {/* PASSWORD MODAL */}
+          {isPassChangeOpen && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md">
+                <h3 className="text-lg font-bold text-white mb-4">Saját Jelszó Módosítása</h3>
+                <form onSubmit={handleChangeOwnPassword} className="space-y-4">
+                  <input type="password" value={newPassInput} onChange={(e) => setNewPassInput(e.target.value)} required placeholder="Új jelszó..." className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <div className="flex justify-end gap-3">
+                    <button type="button" onClick={() => setIsPassChangeOpen(false)} className="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl text-sm">Mégse</button>
+                    <button type="submit" className="px-5 py-2 bg-red-600 text-white rounded-xl text-sm font-bold">Mentés</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT/ADD DAY MODAL */}
+          {isDayModalOpen && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-3 sm:p-4 overflow-y-auto z-50">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-6 w-full max-w-2xl my-auto max-h-[90vh] overflow-y-auto no-scrollbar">
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-4">{editingDay ? 'Forgatási Nap Szerkesztése' : 'Új Forgatási Nap'}</h3>
+                <form onSubmit={handleSaveDay} className="space-y-3 sm:space-y-4">
+                  <input type="text" name="title" defaultValue={editingDay?.title || ''} placeholder="Nap megnevezése" required className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Dátum</label>
+                      <input type="date" name="date" defaultValue={editingDay?.date || ''} required className="w-full bg-black border border-gray-800 rounded-xl p-2.5 text-sm text-white" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Call Time</label>
+                      <input type="time" name="callTime" defaultValue={editingDay?.callTime || '07:00'} required className="w-full bg-black border border-gray-800 rounded-xl p-2.5 text-sm text-white" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Wrap Time</label>
+                      <input type="time" name="wrapTime" defaultValue={editingDay?.wrapTime || '18:00'} className="w-full bg-black border border-gray-800 rounded-xl p-2.5 text-sm text-white" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="text" name="locationName" defaultValue={editingDay?.locationName || ''} placeholder="Helyszín neve" required className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                    <input type="text" name="address" defaultValue={editingDay?.address || ''} placeholder="Pontos cím" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="text" name="scenes" defaultValue={editingDay?.scenes || ''} placeholder="Jelenetek (pl. 12, 14)" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                    <select name="status" defaultValue={editingDay?.status || 'Közelgő'} className="bg-black border border-gray-800 rounded-xl p-3 text-sm text-white">
+                      <option value="Előkészítés alatt">Előkészítés alatt</option>
+                      <option value="Közelgő">Közelgő</option>
+                      <option value="Befejezett">Befejezett</option>
+                    </select>
+                  </div>
+                  <textarea name="dressCode" defaultValue={editingDay?.dressCode || ''} placeholder="Dress Code" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" rows="2" />
+                  <textarea name="propsNotes" defaultValue={editingDay?.propsNotes || ''} placeholder="Kellékek & Instrukciók" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" rows="2" />
+                  {cast.length > 0 && (
+                    <div>
+                      <label className="text-xs text-gray-300 block mb-2">Beosztott Szereplők:</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-black p-3 rounded-xl border border-gray-800 max-h-32 overflow-y-auto">
+                        {cast.map(actor => (
+                          <label key={actor.id} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer py-1">
+                            <input type="checkbox" name="assignedActors" value={actor.id} defaultChecked={(editingDay?.assignedActorIds || []).includes(actor.id)} className="text-red-600 bg-gray-900 rounded" />
+                            {actor.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-3 pt-3">
+                    <button type="button" onClick={() => setIsDayModalOpen(false)} className="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl text-sm">Mégse</button>
+                    <button type="submit" className="px-5 py-2 bg-red-600 text-white rounded-xl text-sm font-bold active:scale-95">Mentés</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT/ADD CAST MODAL */}
+          {isCastModalOpen && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-3 sm:p-4 overflow-y-auto z-50">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-6 w-full max-w-lg my-auto max-h-[90vh] overflow-y-auto no-scrollbar">
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-4">{editingCast ? 'Szereplő Szerkesztése' : 'Új Szereplő'}</h3>
+                <form onSubmit={handleSaveCast} className="space-y-3 sm:space-y-4">
+                  <input type="text" name="name" defaultValue={editingCast?.name || ''} placeholder="Név" required className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <input type="text" name="character" defaultValue={editingCast?.character || ''} placeholder="Karakter" required className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <input type="text" name="phone" defaultValue={editingCast?.phone || ''} placeholder="Telefonszám" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <input type="email" name="email" defaultValue={editingCast?.email || ''} placeholder="Email" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <input type="text" name="pass" defaultValue={editingCast?.pass || '1234'} placeholder="Jelszó" required className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white font-mono focus:outline-none focus:border-red-600" />
+                  <input type="url" name="avatar" defaultValue={editingCast?.avatar || ''} placeholder="Fotó URL" className="w-full bg-black border border-gray-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-600" />
+                  <div className="flex justify-end gap-3 pt-3">
+                    <button type="button" onClick={() => setIsCastModalOpen(false)} className="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl text-sm">Mégse</button>
+                    <button type="submit" className="px-5 py-2 bg-red-600 text-white rounded-xl text-sm font-bold active:scale-95">Mentés</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
